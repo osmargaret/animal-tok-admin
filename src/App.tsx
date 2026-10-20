@@ -28,13 +28,12 @@ import {
   Eye,
   Play,
   X,
-  MapPin,
-  Clock,
-  CheckSquare
+  MapPin
 } from 'lucide-react';
 
 // Backend API URL — set VITE_API_URL in Vercel env vars to your Render backend URL
-const API_URL = import.meta.env.VITE_API_URL || '${API_URL}';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const API_URL: string = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5000';
 
 
 interface Animal {
@@ -170,7 +169,7 @@ export default function App() {
   // System Configuration Toggles
   const [autoApproveVerified, setAutoApproveVerified] = useState(true);
   const [enable2FA, setEnable2FA] = useState(true);
-  const [securityAlerts, setSecurityAlerts] = useState(true);
+  const [_securityAlerts, _setSecurityAlerts] = useState(true); // reserved for future settings panel
   const [socketActive, setSocketActive] = useState(true);
 
   // Invite Form States
