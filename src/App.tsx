@@ -33,6 +33,10 @@ import {
   CheckSquare
 } from 'lucide-react';
 
+// Backend API URL — set VITE_API_URL in Vercel env vars to your Render backend URL
+const API_URL = import.meta.env.VITE_API_URL || '${API_URL}';
+
+
 interface Animal {
   id: string;
   name: string;
@@ -177,7 +181,7 @@ export default function App() {
 
   const fetchDashboardData = () => {
     setLoading(true);
-    fetch('http://localhost:5000/api/admin/dashboard')
+    fetch('${API_URL}/api/admin/dashboard')
       .then(res => res.json())
       .then(data => {
         if (data.stats) setStats(data.stats);
@@ -203,7 +207,7 @@ export default function App() {
     fetchDashboardData();
 
     // Connect to backend Socket.IO engine
-    const socket = io('http://localhost:5000');
+    const socket = io('${API_URL}');
     
     socket.on('connect', () => {
       console.log("⚡ Connected to real-time AnimalTok socket engine.");
@@ -224,7 +228,7 @@ export default function App() {
   }, []);
 
   const handleToggleVerify = (animalId: string) => {
-    fetch(`http://localhost:5000/api/admin/animals/${animalId}/verify`, { method: 'POST' })
+    fetch(`${API_URL}/api/admin/animals/${animalId}/verify`, { method: 'POST' })
       .then(res => res.json())
       .then(() => fetchDashboardData())
       .catch(err => console.error("Failed to verify animal:", err));
@@ -232,7 +236,7 @@ export default function App() {
 
   const handleUserStatusToggle = (userId: string, currentStatus?: string) => {
     const nextStatus = currentStatus === 'suspended' ? 'active' : 'suspended';
-    fetch(`http://localhost:5000/api/admin/users/${userId}/status`, {
+    fetch(`${API_URL}/api/admin/users/${userId}/status`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: nextStatus })
@@ -243,7 +247,7 @@ export default function App() {
   };
 
   const handleSubscriptionChange = (userId: string, plan: string) => {
-    fetch(`http://localhost:5000/api/admin/users/${userId}/subscription`, {
+    fetch(`${API_URL}/api/admin/users/${userId}/subscription`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ subscriptionPlan: plan })
@@ -254,7 +258,7 @@ export default function App() {
   };
 
   const handleReportAction = (reportId: string, action: 'resolved' | 'dismissed') => {
-    fetch(`http://localhost:5000/api/admin/reports/${reportId}/action`, {
+    fetch(`${API_URL}/api/admin/reports/${reportId}/action`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action })
@@ -265,7 +269,7 @@ export default function App() {
   };
 
   const handleMarketplaceApproval = (type: 'product' | 'service', id: string, status: 'approved' | 'rejected') => {
-    fetch(`http://localhost:5000/api/admin/marketplace/${type}/${id}/approval`, {
+    fetch(`${API_URL}/api/admin/marketplace/${type}/${id}/approval`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status })
@@ -277,7 +281,7 @@ export default function App() {
 
   const confirmDeletePost = () => {
     if (!postToDelete) return;
-    fetch(`http://localhost:5000/api/admin/posts/${postToDelete}`, { method: 'DELETE' })
+    fetch(`${API_URL}/api/admin/posts/${postToDelete}`, { method: 'DELETE' })
       .then(res => res.json())
       .then(() => {
         setPostToDelete(null);
@@ -290,7 +294,7 @@ export default function App() {
     e.preventDefault();
     if (!inviteEmail) return;
 
-    fetch('http://localhost:5000/api/admin/team/invite', {
+    fetch('${API_URL}/api/admin/team/invite', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: inviteEmail, name: inviteName, role: inviteRole })
@@ -314,7 +318,7 @@ export default function App() {
       return;
     }
 
-    fetch('http://localhost:5000/api/admin/profile/update', {
+    fetch('${API_URL}/api/admin/profile/update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: adminEmail, name: adminName, newPassword })
