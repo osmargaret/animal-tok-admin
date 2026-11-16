@@ -182,6 +182,23 @@ interface DashboardStats {
   totalAdClicks?: number;
 }
 
+function renderAvatar(avatar: string | undefined, name?: string, size = 36) {
+  if (!avatar) return <span style={{ fontSize: size * 0.65 }}>🐾</span>;
+  if (avatar.startsWith('http') || avatar.startsWith('data:') || avatar.includes('/')) {
+    return (
+      <img
+        src={avatar}
+        alt={name || 'Avatar'}
+        style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', display: 'inline-block', verticalAlign: 'middle', border: '1px solid rgba(255,255,255,0.1)' }}
+        onError={(e) => {
+          e.currentTarget.style.display = 'none';
+        }}
+      />
+    );
+  }
+  return <span style={{ fontSize: size * 0.7, display: 'inline-block', verticalAlign: 'middle' }}>{avatar}</span>;
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'profiles' | 'users' | 'reports' | 'approvals' | 'posts' | 'audit' | 'settings' | 'ads'>('dashboard');
   const [adsSubTab, setAdsSubTab] = useState<'campaigns' | 'sounds'>('campaigns');
@@ -818,7 +835,7 @@ export default function App() {
                       {filteredAnimals.map((animal) => (
                         <tr key={animal.id}>
                           <td style={{ fontWeight: 600 }}>
-                            <span style={{ marginRight: 8 }}>{animal.avatar}</span>
+                            <span style={{ marginRight: 8 }}>{renderAvatar(animal.avatar, animal.name, 28)}</span>
                             {animal.name} <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>({animal.username})</span>
                           </td>
                           <td style={{ color: 'var(--text-secondary)' }}>{animal.breed || 'Pet'}</td>
@@ -1422,7 +1439,7 @@ export default function App() {
                   <tbody>
                     {filteredAnimals.map((animal) => (
                       <tr key={animal.id}>
-                        <td style={{ fontSize: '1.5rem' }}>{animal.avatar}</td>
+                        <td>{renderAvatar(animal.avatar, animal.name, 40)}</td>
                         <td style={{ fontWeight: 600 }}>{animal.name}</td>
                         <td style={{ color: 'var(--brand-primary)' }}>{animal.username}</td>
                         <td style={{ color: 'var(--text-secondary)' }}>{animal.breed}</td>
@@ -1538,7 +1555,7 @@ export default function App() {
                     {filteredPosts.map((post) => (
                       <tr key={post.id}>
                         <td style={{ fontWeight: 600 }}>
-                          <span style={{ marginRight: 6 }}>{post.animalAvatar}</span>
+                          <span style={{ marginRight: 6 }}>{renderAvatar(post.animalAvatar, post.animalName, 26)}</span>
                           {post.animalName}
                         </td>
                         <td style={{ maxWidth: 350, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-secondary)' }}>
@@ -1850,8 +1867,8 @@ export default function App() {
             </button>
 
             <div style={{ height: 160, backgroundImage: `url(${selectedAnimal.coverImage || 'https://images.unsplash.com/photo-1552053831-71594a27632d?w=800&auto=format&fit=crop&q=80'})`, backgroundSize: 'cover', backgroundPosition: 'center', position: 'relative' }}>
-              <div style={{ position: 'absolute', bottom: -30, left: 24, fontSize: '3.5rem', width: 70, height: 70, borderRadius: '50%', background: 'var(--bg-surface)', border: '3px solid var(--brand-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.4)' }}>
-                {selectedAnimal.avatar}
+              <div style={{ position: 'absolute', bottom: -30, left: 24, width: 70, height: 70, borderRadius: '50%', background: 'var(--bg-surface)', border: '3px solid var(--brand-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.4)', overflow: 'hidden' }}>
+                {renderAvatar(selectedAnimal.avatar, selectedAnimal.name, 70)}
               </div>
             </div>
 
@@ -1920,7 +1937,7 @@ export default function App() {
 
             <div style={{ padding: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                <span style={{ fontSize: '1.5rem' }}>{selectedPost.animalAvatar}</span>
+                <span>{renderAvatar(selectedPost.animalAvatar, selectedPost.animalName, 36)}</span>
                 <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>{selectedPost.animalName}</h4>
               </div>
               <p style={{ margin: '0 0 12px 0', fontSize: '0.88rem', color: 'var(--text-primary)', lineHeight: 1.4 }}>
