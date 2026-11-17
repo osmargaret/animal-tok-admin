@@ -79,6 +79,9 @@ interface PostItem {
   likesCount: number;
   commentsCount: number;
   sharesCount?: number;
+  isSuspended?: boolean;
+  suspensionReason?: string;
+  suspendedAt?: string;
   createdAt: string;
 }
 
@@ -89,6 +92,9 @@ interface ProductItem {
   currency: string;
   category: string;
   sellerName: string;
+  image?: string;
+  description?: string;
+  inStock?: boolean;
   approvalStatus?: 'pending' | 'approved' | 'rejected';
 }
 
@@ -98,7 +104,27 @@ interface ServiceItem {
   providerName: string;
   category: string;
   price: string;
+  image?: string;
+  location?: string;
+  description?: string;
   approvalStatus?: 'pending' | 'approved' | 'rejected';
+}
+
+interface EventItem {
+  id: string;
+  title: string;
+  date: string;
+  time?: string;
+  location: string;
+  category: string;
+  petType?: string;
+  image?: string;
+  attendeesCount?: number;
+  organizerName?: string;
+  isPaid?: boolean;
+  ticketPrice?: string;
+  capacity?: number;
+  status?: string;
 }
 
 interface ReportItem {
@@ -183,24 +209,85 @@ interface DashboardStats {
 }
 
 function renderAvatar(avatar: string | undefined, name?: string, size = 36) {
-  if (!avatar) return <span style={{ fontSize: size * 0.65 }}>🐾</span>;
-  if (avatar.startsWith('http') || avatar.startsWith('data:') || avatar.includes('/')) {
+  const initials = name ? name.charAt(0).toUpperCase() : '?';
+  const fallback = (
+    <span style={{
+      width: size, height: size, borderRadius: '50%', background: 'linear-gradient(135deg, #06b6d4, #8b5cf6)',
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: size * 0.4, fontWeight: 700, color: 'white', verticalAlign: 'middle',
+      border: '1px solid rgba(255,255,255,0.15)', flexShrink: 0
+    }}>{initials}</span>
+  );
+  if (!avatar) return fallback;
+  // Handle emoji-only avatars
+  if ([...avatar].length <= 2 && !avatar.startsWith('http') && !avatar.startsWith('/')) {
+    return <span style={{ fontSize: size * 0.75, display: 'inline-block', verticalAlign: 'middle' }}>{avatar}</span>;
+  }
+  if (avatar.startsWith('http') || avatar.startsWith('data:') || avatar.startsWith('/')) {
     return (
       <img
         src={avatar}
         alt={name || 'Avatar'}
-        style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', display: 'inline-block', verticalAlign: 'middle', border: '1px solid rgba(255,255,255,0.1)' }}
+        style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', display: 'inline-block', verticalAlign: 'middle', border: '1px solid rgba(255,255,255,0.15)', flexShrink: 0 }}
         onError={(e) => {
-          e.currentTarget.style.display = 'none';
+          const parent = e.currentTarget.parentNode as HTMLElement;
+          if (parent) {
+            const fb = document.createElement('span');
+            fb.textContent = initials;
+            fb.style.cssText = `width:${size}px;height:${size}px;border-radius:50%;background:linear-gradient(135deg,#06b6d4,#8b5cf6);display:inline-flex;align-items:center;justify-content:center;font-size:${size * 0.4}px;font-weight:700;color:white;vertical-align:middle;border:1px solid rgba(255,255,255,0.15)`;
+            parent.replaceChild(fb, e.currentTarget);
+          } else {
+            e.currentTarget.style.display = 'none';
+          }
         }}
       />
     );
   }
-  return <span style={{ fontSize: size * 0.7, display: 'inline-block', verticalAlign: 'middle' }}>{avatar}</span>;
+  return fallback;
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'profiles' | 'users' | 'reports' | 'approvals' | 'posts' | 'audit' | 'settings' | 'ads'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'profiles' | 'users' | 'reports' | 'approvals' | 'posts' | 'audit' | 'settings' | 'ads' | 'events'>('dashboard');
+  const [events, setEvents] = useState<EventItem[]>([]);
+  const [postsFilter, setPostsFilter] = useState<'all' | 'active' | 'suspended'>('all');
+  const [postToSuspend, setPostToSuspend] = useState<PostItem | null>(null);
+  const [suspensionReason, setSuspensionReason] = useState('🐾 Animal Welfare / Cruelty Violation (Zero Tolerance)');
+  const [customSuspensionNote, setCustomSuspensionNote] = useState('');
+  const [marketSubTab, setMarketSubTab] = useState<'approvals' | 'products' | 'services'>('approvals');
+
+  // Event Form State
+  const [showCreateEventModal, setShowCreateEventModal] = useState(false);
+  const [newEventTitle, setNewEventTitle] = useState('');
+  const [newEventDate, setNewEventDate] = useState('Saturday, Dec 5 • 11:00 AM');
+  const [newEventLocation, setNewEventLocation] = useState('Zilker Park, Austin TX');
+  const [newEventCategory, setNewEventCategory] = useState('Meetup');
+  const [newEventPetType, setNewEventPetType] = useState('all');
+  const [newEventIsPaid, setNewEventIsPaid] = useState(false);
+  const [newEventPrice, setNewEventPrice] = useState('$15.00');
+  const [newEventImage, setNewEventImage] = useState('https://images.unsplash.com/photo-1548767797-d8c844163c4c?w=600&fit=crop');
+  const [newEventDesc, setNewEventDesc] = useState('');
+  const [eventFormMsg, setEventFormMsg] = useState('');
+
+  // Product Form State
+  const [showCreateProductModal, setShowCreateProductModal] = useState(false);
+  const [newProdTitle, setNewProdTitle] = useState('');
+  const [newProdPrice, setNewProdPrice] = useState('19.99');
+  const [newProdCategory, setNewProdCategory] = useState('Food & Treats');
+  const [newProdImage, setNewProdImage] = useState('https://images.unsplash.com/photo-1545249390-6bdfa286032f?w=500&auto=format&fit=crop&q=80');
+  const [newProdDesc, setNewProdDesc] = useState('');
+  const [newProdSeller, setNewProdSeller] = useState('Animandler Official Store');
+  const [prodFormMsg, setProdFormMsg] = useState('');
+
+  // Service Form State
+  const [showCreateServiceModal, setShowCreateServiceModal] = useState(false);
+  const [newServTitle, setNewServTitle] = useState('');
+  const [newServCategory, setNewServCategory] = useState('Grooming & Spa');
+  const [newServPrice, setNewServPrice] = useState('$45/session');
+  const [newServProvider, setNewServProvider] = useState('Verified Pet Specialist');
+  const [newServLocation, setNewServLocation] = useState('Austin, TX & In-Home');
+  const [newServDesc, setNewServDesc] = useState('');
+  const [newServImage, setNewServImage] = useState('https://images.unsplash.com/photo-1516734212186-a967f81ad0d7?w=800&fit=crop');
+  const [servFormMsg, setServFormMsg] = useState('');
   const [adsSubTab, setAdsSubTab] = useState<'campaigns' | 'sounds'>('campaigns');
   const [adsFilter, setAdsFilter] = useState<'all' | 'video' | 'image' | 'audio'>('all');
   const [ads, setAds] = useState<AdItem[]>([]);
@@ -285,6 +372,7 @@ export default function App() {
         if (data.posts) setPosts(data.posts);
         if (data.products) setProducts(data.products);
         if (data.services) setServices(data.services);
+        if (data.events) setEvents(data.events);
         if (data.reports) setReports(data.reports);
         if (data.auditLogs) setAuditLogs(data.auditLogs);
         if (data.ads) setAds(data.ads);
@@ -433,6 +521,145 @@ export default function App() {
     setPlayingAudioId(soundId);
   };
 
+  // Post Moderation: Suspend / Flag or Restore
+  const handleToggleSuspendPost = (post: PostItem, reason?: string) => {
+    const isCurrentlySuspended = Boolean(post.isSuspended);
+    const nextState = !isCurrentlySuspended;
+    fetch(`${API_URL}/api/admin/posts/${post.id}/suspend`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        isSuspended: nextState,
+        reason: nextState ? (reason || suspensionReason) : undefined
+      })
+    })
+      .then(res => res.json())
+      .then(() => {
+        setPostToSuspend(null);
+        setCustomSuspensionNote('');
+        fetchDashboardData();
+      })
+      .catch(err => console.error("Failed to toggle post suspension:", err));
+  };
+
+  // Events Handlers
+  const handleCreateEvent = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newEventTitle) {
+      setEventFormMsg("Event title is required.");
+      return;
+    }
+    fetch(`${API_URL}/api/admin/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: newEventTitle,
+        date: newEventDate,
+        location: newEventLocation,
+        category: newEventCategory,
+        petType: newEventPetType,
+        isPaid: newEventIsPaid,
+        ticketPrice: newEventPrice,
+        image: newEventImage,
+        description: newEventDesc
+      })
+    })
+      .then(res => res.json())
+      .then(() => {
+        setShowCreateEventModal(false);
+        setNewEventTitle('');
+        setNewEventDesc('');
+        setEventFormMsg('');
+        fetchDashboardData();
+      })
+      .catch(err => console.error("Failed to create event:", err));
+  };
+
+  const handleDeleteEvent = (eventId: string) => {
+    if (!window.confirm("Permanently delete this event from Animandler?")) return;
+    fetch(`${API_URL}/api/admin/events/${eventId}`, { method: 'DELETE' })
+      .then(res => res.json())
+      .then(() => fetchDashboardData())
+      .catch(err => console.error("Failed to delete event:", err));
+  };
+
+  // Marketplace Products Handlers
+  const handleCreateProduct = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProdTitle) {
+      setProdFormMsg("Product title is required.");
+      return;
+    }
+    fetch(`${API_URL}/api/admin/products`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: newProdTitle,
+        price: Number(newProdPrice) || 19.99,
+        category: newProdCategory,
+        image: newProdImage,
+        description: newProdDesc,
+        sellerName: newProdSeller
+      })
+    })
+      .then(res => res.json())
+      .then(() => {
+        setShowCreateProductModal(false);
+        setNewProdTitle('');
+        setNewProdDesc('');
+        setProdFormMsg('');
+        fetchDashboardData();
+      })
+      .catch(err => console.error("Failed to create product:", err));
+  };
+
+  const handleDeleteProduct = (productId: string) => {
+    if (!window.confirm("Delete this marketplace product listing?")) return;
+    fetch(`${API_URL}/api/admin/products/${productId}`, { method: 'DELETE' })
+      .then(res => res.json())
+      .then(() => fetchDashboardData())
+      .catch(err => console.error("Failed to delete product:", err));
+  };
+
+  // Pet Care Services Handlers
+  const handleCreateService = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newServTitle) {
+      setServFormMsg("Service title is required.");
+      return;
+    }
+    fetch(`${API_URL}/api/admin/services`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: newServTitle,
+        category: newServCategory,
+        price: newServPrice,
+        providerName: newServProvider,
+        location: newServLocation,
+        description: newServDesc,
+        image: newServImage
+      })
+    })
+      .then(res => res.json())
+      .then(() => {
+        setShowCreateServiceModal(false);
+        setNewServTitle('');
+        setNewServDesc('');
+        setServFormMsg('');
+        fetchDashboardData();
+      })
+      .catch(err => console.error("Failed to create service:", err));
+  };
+
+  const handleDeleteService = (serviceId: string) => {
+    if (!window.confirm("Delete this pet care service listing?")) return;
+    fetch(`${API_URL}/api/admin/services/${serviceId}`, { method: 'DELETE' })
+      .then(res => res.json())
+      .then(() => fetchDashboardData())
+      .catch(err => console.error("Failed to delete service:", err));
+  };
+
   // Real-time WebSockets Listener
   useEffect(() => {
     fetchDashboardData();
@@ -579,9 +806,19 @@ export default function App() {
     u.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const filteredPosts = posts.filter(p => 
-    p.caption.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    p.animalName.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredPosts = posts.filter(p => {
+    const matchesSearch = p.caption.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      p.animalName.toLowerCase().includes(searchQuery.toLowerCase());
+    if (!matchesSearch) return false;
+    if (postsFilter === 'active') return !p.isSuspended;
+    if (postsFilter === 'suspended') return Boolean(p.isSuspended);
+    return true;
+  });
+
+  const filteredEvents = events.filter(e => 
+    e.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    e.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    e.category.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const pendingReports = reports.filter(r => r.status === 'pending');
@@ -614,9 +851,13 @@ export default function App() {
             <ShieldAlert size={18} color={pendingReports.length > 0 ? '#f87171' : 'currentColor'} />
             <span>Reports Queue ({pendingReports.length})</span>
           </div>
+          <div className={`nav-item ${activeTab === 'events' ? 'active' : ''}`} onClick={() => setActiveTab('events')}>
+            <Calendar size={18} color="#06b6d4" />
+            <span style={{ fontWeight: 600 }}>Events &amp; Meetups ({events.length})</span>
+          </div>
           <div className={`nav-item ${activeTab === 'approvals' ? 'active' : ''}`} onClick={() => setActiveTab('approvals')}>
             <ShoppingBag size={18} color={pendingApprovalsCount > 0 ? '#fbbf24' : 'currentColor'} />
-            <span>Approvals ({pendingApprovalsCount})</span>
+            <span>Marketplace &amp; Care ({products.length + services.length})</span>
           </div>
           <div className={`nav-item ${activeTab === 'profiles' ? 'active' : ''}`} onClick={() => setActiveTab('profiles')}>
             <PawPrint size={18} />
@@ -628,7 +869,7 @@ export default function App() {
           </div>
           <div className={`nav-item ${activeTab === 'posts' ? 'active' : ''}`} onClick={() => setActiveTab('posts')}>
             <Video size={18} />
-            <span>Video Content ({posts.length})</span>
+            <span>Video Content &amp; Policy ({posts.length})</span>
           </div>
           <div className={`nav-item ${activeTab === 'audit' ? 'active' : ''}`} onClick={() => setActiveTab('audit')}>
             <FileText size={18} />
@@ -1314,103 +1555,362 @@ export default function App() {
 
           {activeTab === 'approvals' && (
             <div className="glass-panel" style={{ padding: '1.5rem' }}>
-              <div style={{ marginBottom: 20 }}>
-                <h2 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <ShoppingBag color="#fbbf24" size={24} /> Marketplace Listing Approvals
-                </h2>
-                <p style={{ color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>Review seller products & services before they go live on the public store.</p>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
+                <div>
+                  <h2 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <ShoppingBag color="#fbbf24" size={24} /> Marketplace &amp; Care Services Hub
+                  </h2>
+                  <p style={{ color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>Manage product store inventory, verified grooming &amp; veterinary services, and review listings.</p>
+                </div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button
+                    onClick={() => setShowCreateProductModal(true)}
+                    style={{ background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none', color: 'white', padding: '10px 16px', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontWeight: 600, fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: 6 }}
+                  >
+                    <Plus size={16} /> + Add Product
+                  </button>
+                  <button
+                    onClick={() => setShowCreateServiceModal(true)}
+                    style={{ background: 'linear-gradient(135deg, #06b6d4, #0284c7)', border: 'none', color: 'white', padding: '10px 16px', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontWeight: 600, fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: 6 }}
+                  >
+                    <Plus size={16} /> + Add Service
+                  </button>
+                </div>
               </div>
 
-              <h3 style={{ fontSize: '1.1rem', fontWeight: 600, margin: '16px 0 10px 0' }}>Products Awaiting Review</h3>
-              <div className="data-table-wrap" style={{ marginBottom: 24 }}>
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Product Title</th>
-                      <th>Category</th>
-                      <th>Price</th>
-                      <th>Seller</th>
-                      <th>Status</th>
-                      <th>Approval Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {products.map((prod) => (
-                      <tr key={prod.id}>
-                        <td style={{ fontWeight: 600 }}>{prod.title}</td>
-                        <td style={{ color: 'var(--text-secondary)' }}>{prod.category}</td>
-                        <td style={{ color: '#34d399', fontWeight: 600 }}>{prod.currency}{prod.price}</td>
-                        <td>{prod.sellerName}</td>
-                        <td>
-                          <span className="status-badge" style={{ background: prod.approvalStatus === 'approved' ? 'rgba(52, 211, 153, 0.15)' : 'rgba(251, 191, 36, 0.15)', color: prod.approvalStatus === 'approved' ? '#34d399' : '#fbbf24' }}>
-                            {prod.approvalStatus || 'approved'}
-                          </span>
-                        </td>
-                        <td>
-                          <div style={{ display: 'flex', gap: 8 }}>
-                            <button 
-                              onClick={() => handleMarketplaceApproval('product', prod.id, 'approved')}
-                              style={{ background: 'rgba(52, 211, 153, 0.15)', border: '1px solid #34d399', color: '#34d399', padding: '4px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
-                            >
-                              Approve
-                            </button>
-                            <button 
-                              onClick={() => handleMarketplaceApproval('product', prod.id, 'rejected')}
-                              style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid #f87171', color: '#f87171', padding: '4px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.8rem' }}
-                            >
-                              Reject
-                            </button>
-                          </div>
-                        </td>
+              {/* Sub-Tabs: Pending Approvals | All Products | All Services */}
+              <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid var(--border-color)', paddingBottom: 12, marginBottom: 20 }}>
+                <button
+                  onClick={() => setMarketSubTab('approvals')}
+                  style={{
+                    background: marketSubTab === 'approvals' ? 'rgba(251, 191, 36, 0.15)' : 'transparent',
+                    border: marketSubTab === 'approvals' ? '1px solid #fbbf24' : '1px solid transparent',
+                    color: marketSubTab === 'approvals' ? '#fbbf24' : 'var(--text-secondary)',
+                    padding: '8px 16px',
+                    borderRadius: 'var(--radius-sm)',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontSize: '0.85rem'
+                  }}
+                >
+                  Pending Approvals ({pendingApprovalsCount})
+                </button>
+                <button
+                  onClick={() => setMarketSubTab('products')}
+                  style={{
+                    background: marketSubTab === 'products' ? 'rgba(16, 185, 129, 0.15)' : 'transparent',
+                    border: marketSubTab === 'products' ? '1px solid #10b981' : '1px solid transparent',
+                    color: marketSubTab === 'products' ? '#10b981' : 'var(--text-secondary)',
+                    padding: '8px 16px',
+                    borderRadius: 'var(--radius-sm)',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontSize: '0.85rem'
+                  }}
+                >
+                  All Products ({products.length})
+                </button>
+                <button
+                  onClick={() => setMarketSubTab('services')}
+                  style={{
+                    background: marketSubTab === 'services' ? 'rgba(6, 182, 212, 0.15)' : 'transparent',
+                    border: marketSubTab === 'services' ? '1px solid #06b6d4' : '1px solid transparent',
+                    color: marketSubTab === 'services' ? '#06b6d4' : 'var(--text-secondary)',
+                    padding: '8px 16px',
+                    borderRadius: 'var(--radius-sm)',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontSize: '0.85rem'
+                  }}
+                >
+                  All Services &amp; Care ({services.length})
+                </button>
+              </div>
+
+              {marketSubTab === 'approvals' && (
+                <>
+                  <h3 style={{ fontSize: '1.1rem', fontWeight: 600, margin: '16px 0 10px 0' }}>Products Awaiting Review</h3>
+                  <div className="data-table-wrap" style={{ marginBottom: 24 }}>
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Product Title</th>
+                          <th>Category</th>
+                          <th>Price</th>
+                          <th>Seller</th>
+                          <th>Status</th>
+                          <th>Approval Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {products.map((prod) => (
+                          <tr key={prod.id}>
+                            <td style={{ fontWeight: 600 }}>{prod.title}</td>
+                            <td style={{ color: 'var(--text-secondary)' }}>{prod.category}</td>
+                            <td style={{ color: '#34d399', fontWeight: 600 }}>{prod.currency}{prod.price}</td>
+                            <td>{prod.sellerName}</td>
+                            <td>
+                              <span className="status-badge" style={{ background: prod.approvalStatus === 'approved' ? 'rgba(52, 211, 153, 0.15)' : 'rgba(251, 191, 36, 0.15)', color: prod.approvalStatus === 'approved' ? '#34d399' : '#fbbf24' }}>
+                                {prod.approvalStatus || 'approved'}
+                              </span>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', gap: 8 }}>
+                                <button 
+                                  onClick={() => handleMarketplaceApproval('product', prod.id, 'approved')}
+                                  style={{ background: 'rgba(52, 211, 153, 0.15)', border: '1px solid #34d399', color: '#34d399', padding: '4px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
+                                >
+                                  Approve
+                                </button>
+                                <button 
+                                  onClick={() => handleMarketplaceApproval('product', prod.id, 'rejected')}
+                                  style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid #f87171', color: '#f87171', padding: '4px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.8rem' }}
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <h3 style={{ fontSize: '1.1rem', fontWeight: 600, margin: '16px 0 10px 0' }}>Services Awaiting Review</h3>
+                  <div className="data-table-wrap">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Service Title</th>
+                          <th>Category</th>
+                          <th>Price</th>
+                          <th>Provider</th>
+                          <th>Status</th>
+                          <th>Approval Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {services.map((serv) => (
+                          <tr key={serv.id}>
+                            <td style={{ fontWeight: 600 }}>{serv.title}</td>
+                            <td style={{ color: 'var(--text-secondary)' }}>{serv.category}</td>
+                            <td style={{ color: '#38bdf8', fontWeight: 600 }}>{serv.price}</td>
+                            <td>{serv.providerName}</td>
+                            <td>
+                              <span className="status-badge" style={{ background: serv.approvalStatus === 'approved' ? 'rgba(52, 211, 153, 0.15)' : 'rgba(251, 191, 36, 0.15)', color: serv.approvalStatus === 'approved' ? '#34d399' : '#fbbf24' }}>
+                                {serv.approvalStatus || 'approved'}
+                              </span>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', gap: 8 }}>
+                                <button 
+                                  onClick={() => handleMarketplaceApproval('service', serv.id, 'approved')}
+                                  style={{ background: 'rgba(52, 211, 153, 0.15)', border: '1px solid #34d399', color: '#34d399', padding: '4px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
+                                >
+                                  Approve
+                                </button>
+                                <button 
+                                  onClick={() => handleMarketplaceApproval('service', serv.id, 'rejected')}
+                                  style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid #f87171', color: '#f87171', padding: '4px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.8rem' }}
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+
+              {marketSubTab === 'products' && (
+                <div className="data-table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Product</th>
+                        <th>Category</th>
+                        <th>Price</th>
+                        <th>Seller</th>
+                        <th>Stock &amp; Status</th>
+                        <th>Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {products.map((prod) => (
+                        <tr key={prod.id}>
+                          <td style={{ fontWeight: 600 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <img src={prod.image || 'https://images.unsplash.com/photo-1545249390-6bdfa286032f?w=100&auto=format&fit=crop&q=80'} alt={prod.title} style={{ width: 38, height: 38, borderRadius: 8, objectFit: 'cover' }} />
+                              <div>{prod.title}</div>
+                            </div>
+                          </td>
+                          <td style={{ color: 'var(--text-secondary)' }}>{prod.category}</td>
+                          <td style={{ color: '#34d399', fontWeight: 600 }}>{prod.currency}{prod.price}</td>
+                          <td>{prod.sellerName}</td>
+                          <td>
+                            <span className="status-badge" style={{ background: prod.approvalStatus === 'approved' ? 'rgba(52, 211, 153, 0.15)' : 'rgba(251, 191, 36, 0.15)', color: prod.approvalStatus === 'approved' ? '#34d399' : '#fbbf24' }}>
+                              {prod.approvalStatus || 'approved'}
+                            </span>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              <button
+                                onClick={() => handleDeleteProduct(prod.id)}
+                                style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#f87171', padding: '6px 12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}
+                              >
+                                <Trash2 size={14} /> Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {marketSubTab === 'services' && (
+                <div className="data-table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Service</th>
+                        <th>Category</th>
+                        <th>Rate</th>
+                        <th>Provider</th>
+                        <th>Location</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {services.map((serv) => (
+                        <tr key={serv.id}>
+                          <td style={{ fontWeight: 600 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <img src={serv.image || 'https://images.unsplash.com/photo-1516734212186-a967f81ad0d7?w=100&fit=crop'} alt={serv.title} style={{ width: 38, height: 38, borderRadius: 8, objectFit: 'cover' }} />
+                              <div>{serv.title}</div>
+                            </div>
+                          </td>
+                          <td style={{ color: 'var(--text-secondary)' }}>{serv.category}</td>
+                          <td style={{ color: '#38bdf8', fontWeight: 600 }}>{serv.price}</td>
+                          <td>{serv.providerName}</td>
+                          <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{serv.location || 'Local & Virtual'}</td>
+                          <td>
+                            <span className="status-badge" style={{ background: serv.approvalStatus === 'approved' ? 'rgba(52, 211, 153, 0.15)' : 'rgba(251, 191, 36, 0.15)', color: serv.approvalStatus === 'approved' ? '#34d399' : '#fbbf24' }}>
+                              {serv.approvalStatus || 'approved'}
+                            </span>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              <button
+                                onClick={() => handleQuickPromote('service', serv.id)}
+                                style={{ background: 'rgba(245, 158, 11, 0.15)', border: '1px solid #f59e0b', color: '#fbbf24', padding: '6px 12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}
+                                title="Promote service into vertical feed ads"
+                              >
+                                <Megaphone size={14} /> Promote
+                              </button>
+                              <button
+                                onClick={() => handleDeleteService(serv.id)}
+                                style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#f87171', padding: '6px 12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}
+                              >
+                                <Trash2 size={14} /> Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'events' && (
+            <div className="glass-panel" style={{ padding: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
+                <div>
+                  <h2 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <Calendar color="#06b6d4" size={24} /> Community Events &amp; Meetups
+                  </h2>
+                  <p style={{ color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>Manage local adoption drives, agility competitions, meetups, and promote events directly to the mobile feed.</p>
+                </div>
+                <button
+                  onClick={() => setShowCreateEventModal(true)}
+                  style={{ background: 'linear-gradient(135deg, #06b6d4, #0284c7)', border: 'none', color: 'white', padding: '10px 18px', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: 8 }}
+                >
+                  <Plus size={16} /> + Create New Event
+                </button>
               </div>
 
-              <h3 style={{ fontSize: '1.1rem', fontWeight: 600, margin: '16px 0 10px 0' }}>Services Awaiting Review</h3>
               <div className="data-table-wrap">
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th>Service Title</th>
+                      <th>Event</th>
+                      <th>Date &amp; Time</th>
+                      <th>Location</th>
                       <th>Category</th>
-                      <th>Price</th>
-                      <th>Provider</th>
-                      <th>Status</th>
-                      <th>Approval Actions</th>
+                      <th>Attendees</th>
+                      <th>Admission</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {services.map((serv) => (
-                      <tr key={serv.id}>
-                        <td style={{ fontWeight: 600 }}>{serv.title}</td>
-                        <td style={{ color: 'var(--text-secondary)' }}>{serv.category}</td>
-                        <td style={{ color: '#38bdf8', fontWeight: 600 }}>{serv.price}</td>
-                        <td>{serv.providerName}</td>
+                    {filteredEvents.map((ev) => (
+                      <tr key={ev.id}>
+                        <td style={{ fontWeight: 600 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <img src={ev.image || 'https://images.unsplash.com/photo-1548767797-d8c844163c4c?w=100&fit=crop'} alt={ev.title} style={{ width: 40, height: 40, borderRadius: 8, objectFit: 'cover' }} />
+                            <div>
+                              <div>{ev.title}</div>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Host: {ev.organizerName || 'Animandler Host'}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td style={{ color: 'var(--text-secondary)' }}>{ev.date} {ev.time ? `• ${ev.time}` : ''}</td>
+                        <td style={{ color: 'var(--text-secondary)' }}>{ev.location}</td>
                         <td>
-                          <span className="status-badge" style={{ background: serv.approvalStatus === 'approved' ? 'rgba(52, 211, 153, 0.15)' : 'rgba(251, 191, 36, 0.15)', color: serv.approvalStatus === 'approved' ? '#34d399' : '#fbbf24' }}>
-                            {serv.approvalStatus || 'approved'}
+                          <span className="status-badge" style={{ background: 'rgba(6, 182, 212, 0.15)', color: '#06b6d4' }}>
+                            {ev.category || 'Meetup'}
+                          </span>
+                        </td>
+                        <td>{ev.attendeesCount || 1} attending</td>
+                        <td>
+                          <span style={{ color: ev.isPaid ? '#34d399' : '#38bdf8', fontWeight: 600 }}>
+                            {ev.isPaid ? `${ev.ticketPrice || '$15'}` : 'Free'}
                           </span>
                         </td>
                         <td>
                           <div style={{ display: 'flex', gap: 8 }}>
-                            <button 
-                              onClick={() => handleMarketplaceApproval('service', serv.id, 'approved')}
-                              style={{ background: 'rgba(52, 211, 153, 0.15)', border: '1px solid #34d399', color: '#34d399', padding: '4px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
+                            <button
+                              onClick={() => handleQuickPromote('event', ev.id)}
+                              style={{ background: 'rgba(245, 158, 11, 0.15)', border: '1px solid #f59e0b', color: '#fbbf24', padding: '6px 12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}
+                              title="Promote event into vertical ads in user feeds"
                             >
-                              Approve
+                              <Megaphone size={14} /> Promote
                             </button>
-                            <button 
-                              onClick={() => handleMarketplaceApproval('service', serv.id, 'rejected')}
-                              style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid #f87171', color: '#f87171', padding: '4px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.8rem' }}
+                            <button
+                              onClick={() => handleDeleteEvent(ev.id)}
+                              style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#f87171', padding: '6px 12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}
                             >
-                              Reject
+                              <Trash2 size={14} /> Delete
                             </button>
                           </div>
                         </td>
                       </tr>
                     ))}
+                    {filteredEvents.length === 0 && (
+                      <tr>
+                        <td colSpan={7} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                          No events scheduled yet. Click "+ Create New Event" above to schedule an official community pet gathering!
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -1536,53 +2036,142 @@ export default function App() {
 
           {activeTab === 'posts' && (
             <div className="glass-panel" style={{ padding: '1.5rem' }}>
-              <div style={{ marginBottom: 20 }}>
-                <h2 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>Video Content Moderation</h2>
-                <p style={{ color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>Review platform posts, comments count, and enforce content safety policies.</p>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
+                <div>
+                  <h2 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <Video color="#38bdf8" size={24} /> Video Content &amp; Policy Moderation
+                  </h2>
+                  <p style={{ color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>Enforce strict zero animal cruelty policies, suspend violating posts, or permanently remove non-compliant content.</p>
+                </div>
               </div>
+
+              {/* Policy Filter Pills */}
+              <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid var(--border-color)', paddingBottom: 12, marginBottom: 20 }}>
+                <button
+                  onClick={() => setPostsFilter('all')}
+                  style={{
+                    background: postsFilter === 'all' ? 'rgba(56, 189, 248, 0.15)' : 'transparent',
+                    border: postsFilter === 'all' ? '1px solid #38bdf8' : '1px solid transparent',
+                    color: postsFilter === 'all' ? '#38bdf8' : 'var(--text-secondary)',
+                    padding: '8px 16px',
+                    borderRadius: 'var(--radius-sm)',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontSize: '0.85rem'
+                  }}
+                >
+                  All Posts ({posts.length})
+                </button>
+                <button
+                  onClick={() => setPostsFilter('active')}
+                  style={{
+                    background: postsFilter === 'active' ? 'rgba(52, 211, 153, 0.15)' : 'transparent',
+                    border: postsFilter === 'active' ? '1px solid #34d399' : '1px solid transparent',
+                    color: postsFilter === 'active' ? '#34d399' : 'var(--text-secondary)',
+                    padding: '8px 16px',
+                    borderRadius: 'var(--radius-sm)',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontSize: '0.85rem'
+                  }}
+                >
+                  Active &amp; Compliant ({posts.filter(p => !p.isSuspended).length})
+                </button>
+                <button
+                  onClick={() => setPostsFilter('suspended')}
+                  style={{
+                    background: postsFilter === 'suspended' ? 'rgba(239, 68, 68, 0.15)' : 'transparent',
+                    border: postsFilter === 'suspended' ? '1px solid #f87171' : '1px solid transparent',
+                    color: postsFilter === 'suspended' ? '#f87171' : 'var(--text-secondary)',
+                    padding: '8px 16px',
+                    borderRadius: 'var(--radius-sm)',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontSize: '0.85rem'
+                  }}
+                >
+                  Suspended / Flagged ({posts.filter(p => p.isSuspended).length})
+                </button>
+              </div>
+
               <div className="data-table-wrap">
                 <table className="data-table">
                   <thead>
                     <tr>
                       <th>Author</th>
                       <th>Caption</th>
-                      <th>Likes</th>
-                      <th>Comments</th>
+                      <th>Engagement</th>
+                      <th>Policy Status</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredPosts.map((post) => (
-                      <tr key={post.id}>
+                      <tr key={post.id} style={{ background: post.isSuspended ? 'rgba(239, 68, 68, 0.05)' : undefined }}>
                         <td style={{ fontWeight: 600 }}>
-                          <span style={{ marginRight: 6 }}>{renderAvatar(post.animalAvatar, post.animalName, 26)}</span>
+                          <span style={{ marginRight: 6 }}>{renderAvatar(post.animalAvatar, post.animalName, 28)}</span>
                           {post.animalName}
                         </td>
-                        <td style={{ maxWidth: 350, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-secondary)' }}>
+                        <td style={{ maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-secondary)' }}>
                           {post.caption}
                         </td>
-                        <td>❤️ {post.likesCount?.toLocaleString()}</td>
-                        <td>💬 {post.commentsCount}</td>
                         <td>
-                          <div style={{ display: 'flex', gap: 8 }}>
+                          <div style={{ display: 'flex', gap: 10, fontSize: '0.85rem' }}>
+                            <span>❤️ {post.likesCount?.toLocaleString()}</span>
+                            <span>💬 {post.commentsCount}</span>
+                          </div>
+                        </td>
+                        <td>
+                          {post.isSuspended ? (
+                            <span style={{ background: 'rgba(239, 68, 68, 0.18)', border: '1px solid #f87171', color: '#f87171', padding: '4px 10px', borderRadius: 'var(--radius-full)', fontSize: '0.75rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                              <AlertTriangle size={12} /> Suspended: {post.suspensionReason || 'Policy Violation'}
+                            </span>
+                          ) : (
+                            <span style={{ background: 'rgba(52, 211, 153, 0.15)', border: '1px solid #34d399', color: '#34d399', padding: '4px 10px', borderRadius: 'var(--radius-full)', fontSize: '0.75rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                              <CheckCircle2 size={12} /> Active &amp; Safe
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                             <button 
                               onClick={() => setSelectedPost(post)}
                               style={{ background: 'rgba(56, 189, 248, 0.15)', border: '1px solid #38bdf8', color: '#38bdf8', padding: '6px 12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}
                             >
                               <Play size={14} /> Preview
                             </button>
-                            <button 
-                              onClick={() => handleQuickPromote('post', post.id)}
-                              style={{ background: 'rgba(245, 158, 11, 0.15)', border: '1px solid #f59e0b', color: '#fbbf24', padding: '6px 12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}
-                              title="Promote post to vertical feed ads"
-                            >
-                              <Megaphone size={14} /> Promote
-                            </button>
+                            {!post.isSuspended ? (
+                              <>
+                                <button 
+                                  onClick={() => handleQuickPromote('post', post.id)}
+                                  style={{ background: 'rgba(245, 158, 11, 0.15)', border: '1px solid #f59e0b', color: '#fbbf24', padding: '6px 12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}
+                                  title="Promote post to vertical feed ads"
+                                >
+                                  <Megaphone size={14} /> Promote
+                                </button>
+                                <button 
+                                  onClick={() => setPostToSuspend(post)}
+                                  style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.5)', color: '#f87171', padding: '6px 12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}
+                                  title="Suspend post for policy violation (hides from user feed)"
+                                >
+                                  <ShieldAlert size={14} /> Suspend Post
+                                </button>
+                              </>
+                            ) : (
+                              <button 
+                                onClick={() => handleToggleSuspendPost(post)}
+                                style={{ background: 'rgba(52, 211, 153, 0.15)', border: '1px solid #34d399', color: '#34d399', padding: '6px 12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}
+                                title="Restore post back to active feed"
+                              >
+                                <CheckCircle2 size={14} /> Restore Post
+                              </button>
+                            )}
                             <button 
                               onClick={() => setPostToDelete(post.id)}
-                              style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#f87171', padding: '6px 12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}
+                              style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--border-color)', color: '#94a3b8', padding: '6px 12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}
+                              title="Permanently remove post from database"
                             >
-                              <Trash2 size={14} /> Remove
+                              <Trash2 size={14} /> Delete
                             </button>
                           </div>
                         </td>
@@ -2470,6 +3059,461 @@ export default function App() {
                 </a>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 7. Suspend Post for Policy Violation Modal */}
+      {postToSuspend && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div className="glass-panel" style={{ width: '100%', maxWidth: 520, padding: '2rem', position: 'relative' }}>
+            <button 
+              onClick={() => { setPostToSuspend(null); setCustomSuspensionNote(''); }}
+              style={{ position: 'absolute', top: 16, right: 16, background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', width: 32, height: 32, borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <X size={18} />
+            </button>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+              <div style={{ width: 42, height: 42, borderRadius: 12, background: 'rgba(239, 68, 68, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <ShieldAlert size={24} color="#f87171" />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: '#f87171' }}>Suspend Post (Policy Moderation)</h3>
+                <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>This post will be immediately hidden from the mobile feed.</p>
+              </div>
+            </div>
+
+            <div style={{ background: 'rgba(255,255,255,0.03)', padding: 12, borderRadius: 8, marginBottom: 16, border: '1px solid var(--border-color)' }}>
+              <div style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: 4 }}>Author: {postToSuspend.animalName}</div>
+              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>"{postToSuspend.caption}"</div>
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                Primary Community Standards Violation *
+              </label>
+              <select
+                value={suspensionReason}
+                onChange={e => setSuspensionReason(e.target.value)}
+                style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px', color: 'white', width: '100%', fontSize: '0.9rem', cursor: 'pointer' }}
+              >
+                <option value="🐾 Animal Cruelty / Welfare Violation (Zero Tolerance)">🐾 Animal Cruelty / Harm Violation (Zero Tolerance)</option>
+                <option value="⚠️ Dangerous Activity / Animal Neglect">⚠️ Dangerous Activity / Animal Neglect</option>
+                <option value="🚫 Inappropriate / Sexually Explicit / Vulgar">🚫 Inappropriate / Graphic / Vulgar</option>
+                <option value="📢 Spam / Commercial Scam / Phishing">📢 Spam / Commercial Scam / Phishing</option>
+                <option value="© Copyright Infringement / Stolen Media">© Copyright Infringement / Stolen Media</option>
+                <option value="Other Policy Violation">Other Policy Violation</option>
+              </select>
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                Additional Moderator Notes (Optional)
+              </label>
+              <textarea
+                rows={3}
+                placeholder="Details of the violation for the audit log..."
+                value={customSuspensionNote}
+                onChange={e => setCustomSuspensionNote(e.target.value)}
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px', color: 'white', width: '100%', fontSize: '0.9rem', resize: 'vertical' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => { setPostToSuspend(null); setCustomSuspensionNote(''); }}
+                style={{ background: 'transparent', border: '1px solid var(--border-color)', color: 'white', padding: '10px 18px', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleToggleSuspendPost(postToSuspend, customSuspensionNote || suspensionReason)}
+                style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)', border: 'none', color: 'white', padding: '10px 20px', borderRadius: 8, cursor: 'pointer', fontWeight: 700 }}
+              >
+                Confirm &amp; Suspend Post
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 8. Create Event Modal */}
+      {showCreateEventModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div className="glass-panel" style={{ width: '100%', maxWidth: 540, maxHeight: '90vh', overflowY: 'auto', padding: '2rem', position: 'relative' }}>
+            <button 
+              onClick={() => setShowCreateEventModal(false)}
+              style={{ position: 'absolute', top: 16, right: 16, background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', width: 32, height: 32, borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <X size={18} />
+            </button>
+
+            <h3 style={{ margin: '0 0 6px 0', fontSize: '1.3rem', fontWeight: 700, color: 'white' }}>Create Community Pet Event</h3>
+            <p style={{ margin: '0 0 16px 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Publish an official pet meetup, adoption drive, or agility tournament.</p>
+
+            {eventFormMsg && (
+              <div style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#f87171', padding: '8px 12px', borderRadius: 8, marginBottom: 14, fontSize: '0.85rem' }}>
+                {eventFormMsg}
+              </div>
+            )}
+
+            <form onSubmit={handleCreateEvent} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 4 }}>Event Title *</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Austin Golden Retriever Playday 🎾"
+                  value={newEventTitle}
+                  onChange={e => setNewEventTitle(e.target.value)}
+                  required
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px', color: 'white', width: '100%', fontSize: '0.9rem' }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 4 }}>Date &amp; Time *</label>
+                  <input
+                    type="text"
+                    placeholder="Saturday, Dec 5 • 11:00 AM"
+                    value={newEventDate}
+                    onChange={e => setNewEventDate(e.target.value)}
+                    required
+                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px', color: 'white', width: '100%', fontSize: '0.9rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 4 }}>Category</label>
+                  <select
+                    value={newEventCategory}
+                    onChange={e => setNewEventCategory(e.target.value)}
+                    style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px', color: 'white', width: '100%', fontSize: '0.9rem', cursor: 'pointer' }}
+                  >
+                    <option value="Meetup">🐾 Meetup &amp; Play</option>
+                    <option value="Adoption">🏠 Adoption Drive</option>
+                    <option value="Sports">🏆 Sports &amp; Agility</option>
+                    <option value="Contest">🎃 Costume Contest</option>
+                    <option value="Mating">❤️ Mating &amp; Breeding</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 4 }}>Pet Type</label>
+                  <select
+                    value={newEventPetType}
+                    onChange={e => setNewEventPetType(e.target.value)}
+                    style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px', color: 'white', width: '100%', fontSize: '0.9rem', cursor: 'pointer' }}
+                  >
+                    <option value="all">🐾 All Pets Welcome</option>
+                    <option value="dogs">🐕 Dogs Only</option>
+                    <option value="cats">🐈 Cats Only</option>
+                    <option value="birds">🦜 Birds & Parrots</option>
+                    <option value="reptiles">🦎 Reptiles & Exotic</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 4 }}>Location *</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Zilker Park, Austin TX"
+                  value={newEventLocation}
+                  onChange={e => setNewEventLocation(e.target.value)}
+                  required
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px', color: 'white', width: '100%', fontSize: '0.9rem' }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 4 }}>Admission Type</label>
+                  <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+                    <button
+                      type="button"
+                      onClick={() => setNewEventIsPaid(false)}
+                      style={{ flex: 1, padding: '8px', borderRadius: 8, border: !newEventIsPaid ? '1px solid #06b6d4' : '1px solid var(--border-color)', background: !newEventIsPaid ? 'rgba(6,182,212,0.15)' : 'transparent', color: 'white', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem' }}
+                    >
+                      Free RSVP
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewEventIsPaid(true)}
+                      style={{ flex: 1, padding: '8px', borderRadius: 8, border: newEventIsPaid ? '1px solid #10b981' : '1px solid var(--border-color)', background: newEventIsPaid ? 'rgba(16,185,129,0.15)' : 'transparent', color: 'white', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem' }}
+                    >
+                      Paid Ticket
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 4 }}>Ticket Price (if paid)</label>
+                  <input
+                    type="text"
+                    placeholder="$15.00"
+                    disabled={!newEventIsPaid}
+                    value={newEventPrice}
+                    onChange={e => setNewEventPrice(e.target.value)}
+                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px', color: 'white', width: '100%', fontSize: '0.9rem', opacity: newEventIsPaid ? 1 : 0.5 }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 4 }}>Cover Image URL</label>
+                <input
+                  type="url"
+                  placeholder="https://images.unsplash.com/..."
+                  value={newEventImage}
+                  onChange={e => setNewEventImage(e.target.value)}
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px', color: 'white', width: '100%', fontSize: '0.9rem' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 4 }}>Description</label>
+                <textarea
+                  rows={3}
+                  placeholder="Describe activities, snacks provided, leash requirements..."
+                  value={newEventDesc}
+                  onChange={e => setNewEventDesc(e.target.value)}
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px', color: 'white', width: '100%', fontSize: '0.9rem', resize: 'vertical' }}
+                />
+              </div>
+
+              <button
+                type="submit"
+                style={{ background: 'linear-gradient(135deg, #06b6d4, #0284c7)', border: 'none', color: 'white', padding: '12px 18px', borderRadius: 8, fontWeight: 700, fontSize: '0.95rem', cursor: 'pointer', marginTop: 6 }}
+              >
+                Publish Event to App 📅
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 9. Create Product Modal */}
+      {showCreateProductModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div className="glass-panel" style={{ width: '100%', maxWidth: 500, padding: '2rem', position: 'relative' }}>
+            <button 
+              onClick={() => setShowCreateProductModal(false)}
+              style={{ position: 'absolute', top: 16, right: 16, background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', width: 32, height: 32, borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <X size={18} />
+            </button>
+
+            <h3 style={{ margin: '0 0 6px 0', fontSize: '1.3rem', fontWeight: 700, color: 'white' }}>Add Marketplace Product</h3>
+            <p style={{ margin: '0 0 16px 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>List verified pet merchandise, toys, or organic food in the store.</p>
+
+            {prodFormMsg && (
+              <div style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#f87171', padding: '8px 12px', borderRadius: 8, marginBottom: 14, fontSize: '0.85rem' }}>
+                {prodFormMsg}
+              </div>
+            )}
+
+            <form onSubmit={handleCreateProduct} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 4 }}>Product Title *</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Grain-Free Salmon Bites (12oz)"
+                  value={newProdTitle}
+                  onChange={e => setNewProdTitle(e.target.value)}
+                  required
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px', color: 'white', width: '100%', fontSize: '0.9rem' }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 4 }}>Price ($) *</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="19.99"
+                    value={newProdPrice}
+                    onChange={e => setNewProdPrice(e.target.value)}
+                    required
+                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px', color: 'white', width: '100%', fontSize: '0.9rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 4 }}>Category</label>
+                  <select
+                    value={newProdCategory}
+                    onChange={e => setNewProdCategory(e.target.value)}
+                    style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px', color: 'white', width: '100%', fontSize: '0.9rem', cursor: 'pointer' }}
+                  >
+                    <option value="Food & Treats">🥩 Food &amp; Treats</option>
+                    <option value="Toys & Gear">🧸 Toys &amp; Gear</option>
+                    <option value="Accessories">🎀 Accessories</option>
+                    <option value="Health & Wellness">💊 Health &amp; Wellness</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 4 }}>Product Image URL</label>
+                <input
+                  type="url"
+                  placeholder="https://images.unsplash.com/..."
+                  value={newProdImage}
+                  onChange={e => setNewProdImage(e.target.value)}
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px', color: 'white', width: '100%', fontSize: '0.9rem' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 4 }}>Seller / Brand Name</label>
+                <input
+                  type="text"
+                  placeholder="Animandler Official Store"
+                  value={newProdSeller}
+                  onChange={e => setNewProdSeller(e.target.value)}
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px', color: 'white', width: '100%', fontSize: '0.9rem' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 4 }}>Description</label>
+                <textarea
+                  rows={2}
+                  placeholder="Key features and ingredients..."
+                  value={newProdDesc}
+                  onChange={e => setNewProdDesc(e.target.value)}
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px', color: 'white', width: '100%', fontSize: '0.9rem', resize: 'vertical' }}
+                />
+              </div>
+
+              <button
+                type="submit"
+                style={{ background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none', color: 'white', padding: '12px 18px', borderRadius: 8, fontWeight: 700, fontSize: '0.95rem', cursor: 'pointer', marginTop: 6 }}
+              >
+                Publish Product to Store 🛍️
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 10. Create Service Modal */}
+      {showCreateServiceModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div className="glass-panel" style={{ width: '100%', maxWidth: 500, padding: '2rem', position: 'relative' }}>
+            <button 
+              onClick={() => setShowCreateServiceModal(false)}
+              style={{ position: 'absolute', top: 16, right: 16, background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', width: 32, height: 32, borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <X size={18} />
+            </button>
+
+            <h3 style={{ margin: '0 0 6px 0', fontSize: '1.3rem', fontWeight: 700, color: 'white' }}>Add Pet Care Service</h3>
+            <p style={{ margin: '0 0 16px 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>List verified grooming, vet telehealth, behavioral training, or boarding.</p>
+
+            {servFormMsg && (
+              <div style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#f87171', padding: '8px 12px', borderRadius: 8, marginBottom: 14, fontSize: '0.85rem' }}>
+                {servFormMsg}
+              </div>
+            )}
+
+            <form onSubmit={handleCreateService} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 4 }}>Service Title *</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Full Luxury Spa Grooming &amp; Nail Trim"
+                  value={newServTitle}
+                  onChange={e => setNewServTitle(e.target.value)}
+                  required
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px', color: 'white', width: '100%', fontSize: '0.9rem' }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 4 }}>Category</label>
+                  <select
+                    value={newServCategory}
+                    onChange={e => setNewServCategory(e.target.value)}
+                    style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px', color: 'white', width: '100%', fontSize: '0.9rem', cursor: 'pointer' }}
+                  >
+                    <option value="Grooming & Spa">✨ Grooming &amp; Spa</option>
+                    <option value="Veterinary Care">🩺 Veterinary Wellness</option>
+                    <option value="Dog Walking">🐕 Dog Walking</option>
+                    <option value="Sitting & Boarding">🏠 Sitting &amp; Boarding</option>
+                    <option value="Training">🎓 Behavioral Training</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 4 }}>Rate / Price *</label>
+                  <input
+                    type="text"
+                    placeholder="$45.00/session"
+                    value={newServPrice}
+                    onChange={e => setNewServPrice(e.target.value)}
+                    required
+                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px', color: 'white', width: '100%', fontSize: '0.9rem' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 4 }}>Provider Name</label>
+                  <input
+                    type="text"
+                    placeholder="Verified Specialist"
+                    value={newServProvider}
+                    onChange={e => setNewServProvider(e.target.value)}
+                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px', color: 'white', width: '100%', fontSize: '0.9rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 4 }}>Location / Coverage</label>
+                  <input
+                    type="text"
+                    placeholder="Austin, TX &amp; In-Home"
+                    value={newServLocation}
+                    onChange={e => setNewServLocation(e.target.value)}
+                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px', color: 'white', width: '100%', fontSize: '0.9rem' }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 4 }}>Cover Photo URL</label>
+                <input
+                  type="url"
+                  placeholder="https://images.unsplash.com/..."
+                  value={newServImage}
+                  onChange={e => setNewServImage(e.target.value)}
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px', color: 'white', width: '100%', fontSize: '0.9rem' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: 4 }}>Description</label>
+                <textarea
+                  rows={2}
+                  placeholder="Service breakdown, products used, vaccination requirements..."
+                  value={newServDesc}
+                  onChange={e => setNewServDesc(e.target.value)}
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px', color: 'white', width: '100%', fontSize: '0.9rem', resize: 'vertical' }}
+                />
+              </div>
+
+              <button
+                type="submit"
+                style={{ background: 'linear-gradient(135deg, #06b6d4, #0284c7)', border: 'none', color: 'white', padding: '12px 18px', borderRadius: 8, fontWeight: 700, fontSize: '0.95rem', cursor: 'pointer', marginTop: 6 }}
+              >
+                Publish Service to Directory 🩺
+              </button>
+            </form>
           </div>
         </div>
       )}
